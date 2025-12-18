@@ -1,549 +1,543 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  Play, 
-  CheckCircle, 
-  Database, 
-  Table as TableIcon, 
-  ChevronRight, 
-  ChevronLeft, 
-  AlertCircle,
-  BookOpen,
-  Award,
-  RefreshCw,
-  Layout,
-  Code
-} from 'lucide-react';
-
-// --- SQL.js Initialization ---
-// We use a CDN-based sql.js to run a real SQL engine in the browser
-const SQL_JS_WASM = "https://sql.js.org/dist/sql-wasm.wasm";
-const SQL_JS_JS = "https://sql.js.org/dist/sql-wasm.js";
-
-// --- Database Schema & Seed Data ---
-const SEED_SQL = `
-  CREATE TABLE departments (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL
-  );
-
-  CREATE TABLE employees (
-    id INTEGER PRIMARY KEY,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    email TEXT,
-    department_id INTEGER,
-    salary INTEGER,
-    hire_date DATE,
-    FOREIGN KEY (department_id) REFERENCES departments(id)
-  );
-
-  CREATE TABLE products (
-    id INTEGER PRIMARY KEY,
-    name TEXT NOT NULL,
-    category TEXT,
-    price REAL,
-    stock_quantity INTEGER
-  );
-
-  CREATE TABLE orders (
-    id INTEGER PRIMARY KEY,
-    customer_name TEXT,
-    order_date DATE,
-    total_amount REAL
-  );
-
-  CREATE TABLE order_items (
-    id INTEGER PRIMARY KEY,
-    order_id INTEGER,
-    product_id INTEGER,
-    quantity INTEGER,
-    price_at_purchase REAL,
-    FOREIGN KEY (order_id) REFERENCES orders(id),
-    FOREIGN KEY (product_id) REFERENCES products(id)
-  );
-
-  -- Seed Data
-  INSERT INTO departments (id, name) VALUES (1, 'מכירות'), (2, 'פיתוח'), (3, 'שיווק'), (4, 'משאבי אנוש');
-  
-  INSERT INTO employees (first_name, last_name, email, department_id, salary, hire_date) VALUES 
-  ('ישראל', 'ישראלי', 'israel@company.com', 2, 25000, '2020-01-15'),
-  ('מיכל', 'כהן', 'michal@company.com', 1, 18000, '2021-03-10'),
-  ('דני', 'לוי', 'danny@company.com', 2, 22000, '2019-11-20'),
-  ('שירה', 'אברהם', 'shira@company.com', 3, 15500, '2022-05-04'),
-  ('יוסי', 'מזרחי', 'yossi@company.com', 1, 19000, '2018-07-22'),
-  ('ענת', 'פרץ', 'anat@company.com', 4, 14000, '2023-01-12');
-
-  INSERT INTO products (name, category, price, stock_quantity) VALUES
-  ('מחשב נייד', 'אלקטרוניקה', 4500.0, 15),
-  ('עכבר אלחוטי', 'אלקטרוניקה', 120.0, 50),
-  ('מקלדת מכנית', 'אלקטרוניקה', 350.0, 20),
-  ('שולחן כתיבה', 'ריהוט', 850.0, 10),
-  ('כיסא מנהלים', 'ריהוט', 1200.0, 5);
-
-  INSERT INTO orders (customer_name, order_date, total_amount) VALUES
-  ('אבי לוי', '2023-10-01', 4620.0),
-  ('רחל כהן', '2023-10-05', 350.0),
-  ('יעקב ישראלי', '2023-10-10', 1200.0);
-
-  INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALUES
-  (1, 1, 1, 4500.0),
-  (1, 2, 1, 120.0),
-  (2, 3, 1, 350.0),
-  (3, 5, 1, 1200.0);
-`;
-
-// --- Exercise Content ---
-const EXERCISES = [
-  {
-    id: 1,
-    topic: 'SELECT, WHERE',
-    level: 'מתחיל',
-    title: 'הצגת כל העובדים',
-    description: 'כתוב שאילתה שתחזיר את כל העמודות מטבלת העובדים (employees).',
-    tables: ['employees'],
-    expectedQuery: 'SELECT * FROM employees',
-    hint: 'השתמש ב-SELECT * FROM...'
-  },
-  {
-    id: 2,
-    topic: 'SELECT, WHERE',
-    level: 'מתחיל',
-    title: 'סינון לפי שכר',
-    description: 'מצא את כל העובדים שהשכר שלהם גבוה מ-20,000.',
-    tables: ['employees'],
-    expectedQuery: 'SELECT * FROM employees WHERE salary > 20000',
-    hint: 'השתמש ב-WHERE salary > ...'
-  },
-  {
-    id: 3,
-    topic: 'JOIN',
-    level: 'בינוני',
-    title: 'עובדים ומחלקות',
-    description: 'הצג את השם הפרטי של העובד ואת שם המחלקה שלו. בצע JOIN בין employees ל-departments.',
-    tables: ['employees', 'departments'],
-    expectedQuery: 'SELECT e.first_name, d.name FROM employees e JOIN departments d ON e.department_id = d.id',
-    hint: 'זכור להשתמש ב-JOIN וב-ON לקישור המפתחות.'
-  },
-  {
-    id: 4,
-    topic: 'GROUP BY',
-    level: 'בינוני',
-    title: 'שכר ממוצע במחלקה',
-    description: 'חשב את השכר הממוצע לכל מחלקה. הצג את שם המחלקה ואת הממוצע.',
-    tables: ['employees', 'departments'],
-    expectedQuery: 'SELECT d.name, AVG(e.salary) FROM employees e JOIN departments d ON e.department_id = d.id GROUP BY d.name',
-    hint: 'השתמש ב-AVG וב-GROUP BY.'
-  },
-  {
-    id: 5,
-    topic: 'Advanced',
-    level: 'מתקדם',
-    title: 'מלאי מוצרים נמוך',
-    description: 'הצג את כל המוצרים שכמות המלאי שלהם נמוכה מ-15, מסודרים מהכמות הנמוכה לגבוהה.',
-    tables: ['products'],
-    expectedQuery: 'SELECT * FROM products WHERE stock_quantity < 15 ORDER BY stock_quantity ASC',
-    hint: 'השתמש ב-ORDER BY.'
-  }
-];
-
-export default function App() {
-  const [db, setDb] = useState(null);
-  const [currentExercise, setCurrentExercise] = useState(EXERCISES[0]);
-  const [query, setQuery] = useState(EXERCISES[0].expectedQuery);
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
-  const [completedExercises, setCompletedExercises] = useState([]);
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [showSchema, setShowSchema] = useState(false);
-
-  // Initialize DB
-  useEffect(() => {
-    const init = async () => {
-      try {
-        const script = document.createElement("script");
-        script.src = SQL_JS_JS;
-        script.async = true;
-        document.body.appendChild(script);
-
-        script.onload = async () => {
-          const initSqlJs = window.initSqlJs;
-          const SQL = await initSqlJs({ locateFile: () => SQL_JS_WASM });
-          const database = new SQL.Database();
-          database.run(SEED_SQL);
-          setDb(database);
-          setIsInitializing(false);
-        };
-      } catch (err) {
-        setError("שגיאה בטעינת מנוע ה-SQL");
-        setIsInitializing(false);
-      }
-
-      // Load progress
-      const saved = localStorage.getItem('sql_progress');
-      if (saved) setCompletedExercises(JSON.parse(saved));
-    };
-    init();
-  }, []);
-
-  // Update query when exercise changes
-  useEffect(() => {
-    setQuery("");
-    setResults(null);
-    setError(null);
-    setSuccess(false);
-  }, [currentExercise]);
-
-  const validateQuery = (sql) => {
-    const forbidden = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 'GRANT', 'REVOKE'];
-    const upper = sql.toUpperCase();
-    for (let word of forbidden) {
-      if (upper.includes(word)) {
-        throw new Error(`שימוש בפקודה אסורה: ${word}. המערכת במצב קריאה בלבד.`);
-      }
-    }
-  };
-
-  const handleRun = () => {
-    if (!db) return;
-    setError(null);
-    setSuccess(false);
-
-    try {
-      validateQuery(query);
-      
-      // Execute query
-      const res = db.exec(query);
-      
-      if (res.length === 0) {
-        setResults({ columns: [], values: [] });
-      } else {
-        setResults({ columns: res[0].columns, values: res[0].values });
-      }
-    } catch (err) {
-      setError(err.message);
-      setResults(null);
-    }
-  };
-
-  const handleCheck = () => {
-    if (!db || !query) return;
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL Master - תרגול שאילתות</title>
     
-    try {
-      // Execute user query
-      const userRes = db.exec(query);
-      // Execute expected query
-      const expectedRes = db.exec(currentExercise.expectedQuery);
+    <!-- Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 
-      const userJson = JSON.stringify(userRes);
-      const expectedJson = JSON.stringify(expectedRes);
-
-      if (userJson === expectedJson) {
-        setSuccess(true);
-        if (!completedExercises.includes(currentExercise.id)) {
-          const newProgress = [...completedExercises, currentExercise.id];
-          setCompletedExercises(newProgress);
-          localStorage.setItem('sql_progress', JSON.stringify(newProgress));
-        }
-      } else {
-        setError("התוצאה אינה תואמת את הנדרש במשימה. נסה שוב.");
-      }
-    } catch (err) {
-      setError("שגיאה בבדיקת התשובה: " + err.message);
-    }
-  };
-
-  const resetProgress = () => {
-    setCompletedExercises([]);
-    localStorage.removeItem('sql_progress');
-  };
-
-  if (isInitializing) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-900 text-white font-sans text-xl" dir="rtl">
-        <RefreshCw className="animate-spin ml-3" />
-        טוען מסד נתונים...
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col" dir="rtl">
-      {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between shadow-lg sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-2 rounded-lg">
-            <Database className="w-6 h-6 text-white" />
-          </div>
-          <h1 className="text-xl font-bold bg-gradient-to-l from-white to-slate-400 bg-clip-text text-transparent">
-            SQL Master <span className="text-sm font-normal text-slate-400 hidden sm:inline">| תרגול שאילתות בזמן אמת</span>
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex flex-col items-end">
-            <span className="text-xs text-slate-400">התקדמות</span>
-            <div className="w-32 h-2 bg-slate-800 rounded-full mt-1 overflow-hidden">
-              <div 
-                className="h-full bg-green-500 transition-all duration-500" 
-                style={{ width: `${(completedExercises.length / EXERCISES.length) * 100}%` }}
-              ></div>
-            </div>
-          </div>
-          <button 
-            onClick={resetProgress}
-            className="text-slate-400 hover:text-red-400 text-xs transition-colors"
-          >
-            איפוס
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Sidebar - Exercise Selection */}
-        <aside className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col overflow-y-auto">
-          <div className="p-4 border-b border-slate-800 flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-blue-400" />
-            <h2 className="font-semibold">רשימת תרגילים</h2>
-          </div>
-          <nav className="p-2 space-y-1">
-            {EXERCISES.map((ex) => (
-              <button
-                key={ex.id}
-                onClick={() => setCurrentExercise(ex)}
-                className={`w-full text-right p-3 rounded-lg flex items-center justify-between transition-all ${
-                  currentExercise.id === ex.id 
-                    ? 'bg-blue-600/20 border border-blue-600/50 text-blue-100 shadow-inner' 
-                    : 'hover:bg-slate-800 text-slate-400'
-                }`}
-              >
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">{ex.title}</span>
-                  <span className="text-[10px] opacity-70 uppercase tracking-wider">{ex.topic} • {ex.level}</span>
-                </div>
-                {completedExercises.includes(ex.id) && (
-                  <CheckCircle className="w-4 h-4 text-green-500 shrink-0 ml-2" />
-                )}
-              </button>
-            ))}
-          </nav>
-        </aside>
-
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
-          
-          {/* Exercise Details */}
-          <div className="p-6 bg-slate-900/50 border-b border-slate-800">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${
-                    currentExercise.level === 'מתחיל' ? 'bg-green-500/20 text-green-400' :
-                    currentExercise.level === 'בינוני' ? 'bg-yellow-500/20 text-yellow-400' :
-                    'bg-red-500/20 text-red-400'
-                  }`}>
-                    {currentExercise.level}
-                  </span>
-                  <span className="text-xs text-slate-500">{currentExercise.topic}</span>
-                </div>
-                <h3 className="text-2xl font-bold text-white">{currentExercise.title}</h3>
-              </div>
-              <button 
-                onClick={() => setShowSchema(!showSchema)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-sm transition-all"
-              >
-                <TableIcon className="w-4 h-4" />
-                {showSchema ? 'הסתר סכימה' : 'צפה בסכימה'}
-              </button>
-            </div>
-            <p className="text-slate-300 leading-relaxed max-w-3xl">
-              {currentExercise.description}
-            </p>
-          </div>
-
-          {/* Schema Viewer (Expandable) */}
-          {showSchema && (
-            <div className="bg-slate-900 border-b border-slate-800 p-4 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                   <TableIcon className="w-4 h-4" /> 
-                   <span>employees</span>
-                </div>
-                <div className="text-[11px] text-slate-400 space-y-1">
-                  <div>id (PK)</div>
-                  <div>first_name, last_name</div>
-                  <div>email, salary</div>
-                  <div>department_id (FK)</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                   <TableIcon className="w-4 h-4" /> 
-                   <span>departments</span>
-                </div>
-                <div className="text-[11px] text-slate-400 space-y-1">
-                  <div>id (PK)</div>
-                  <div>name</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                   <TableIcon className="w-4 h-4" /> 
-                   <span>products</span>
-                </div>
-                <div className="text-[11px] text-slate-400 space-y-1">
-                  <div>id (PK)</div>
-                  <div>name, category, price</div>
-                  <div>stock_quantity</div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                   <TableIcon className="w-4 h-4" /> 
-                   <span>orders</span>
-                </div>
-                <div className="text-[11px] text-slate-400 space-y-1">
-                  <div>id (PK)</div>
-                  <div>customer_name, order_date</div>
-                  <div>total_amount</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Editor Section */}
-          <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
-            <div className="flex-1 flex flex-col min-h-[200px] border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-2xl">
-              <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Code className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs font-mono uppercase text-slate-400">SQL Editor</span>
-                </div>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={handleRun}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all transform active:scale-95 shadow-lg shadow-blue-900/20"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    הרץ
-                  </button>
-                  <button 
-                    onClick={handleCheck}
-                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all transform active:scale-95 shadow-lg shadow-green-900/20"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    בדוק תשובה
-                  </button>
-                </div>
-              </div>
-              <textarea
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="כתוב את השאילתה שלך כאן..."
-                className="flex-1 w-full bg-slate-900 p-6 font-mono text-lg text-blue-100 outline-none resize-none placeholder-slate-600"
-                spellCheck="false"
-              />
-            </div>
-
-            {/* Results Section */}
-            <div className="flex-1 flex flex-col border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-xl">
-               <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center gap-2">
-                 <Layout className="w-4 h-4 text-slate-400" />
-                 <span className="text-xs font-mono uppercase text-slate-400">Results</span>
-               </div>
-               
-               <div className="flex-1 overflow-auto p-0 scrollbar-thin scrollbar-thumb-slate-700">
-                 {error && (
-                   <div className="m-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3 text-red-400 animate-in slide-in-from-right-2">
-                     <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                     <p className="text-sm">{error}</p>
-                   </div>
-                 )}
-
-                 {success && (
-                   <div className="m-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-start gap-3 text-green-400 animate-in zoom-in-95">
-                     <Award className="w-6 h-6 shrink-0" />
-                     <div>
-                       <h4 className="font-bold">כל הכבוד!</h4>
-                       <p className="text-sm">התשובה נכונה. עברת לשלב הבא.</p>
-                     </div>
-                   </div>
-                 )}
-
-                 {!results && !error && !success && (
-                   <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2 opacity-50">
-                     <Play className="w-12 h-12" />
-                     <p>הרץ שאילתה כדי לראות תוצאות</p>
-                   </div>
-                 )}
-
-                 {results && (
-                   <table className="w-full text-right text-sm border-collapse">
-                     <thead className="sticky top-0 bg-slate-800 z-10 shadow-sm">
-                       <tr>
-                         {results.columns.map((col, i) => (
-                           <th key={i} className="px-4 py-3 border-b border-slate-700 text-slate-300 font-bold whitespace-nowrap">
-                             {col}
-                           </th>
-                         ))}
-                       </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-800">
-                       {results.values.length > 0 ? (
-                         results.values.map((row, i) => (
-                           <tr key={i} className="hover:bg-slate-800/50 transition-colors">
-                             {row.map((cell, j) => (
-                               <td key={j} className="px-4 py-3 text-slate-400 whitespace-nowrap border-b border-slate-800/50">
-                                 {cell === null ? <span className="text-slate-700 italic">NULL</span> : String(cell)}
-                               </td>
-                             ))}
-                           </tr>
-                         ))
-                       ) : (
-                         <tr>
-                           <td colSpan={results.columns.length} className="px-4 py-8 text-center text-slate-500">
-                             אין תוצאות להצגה
-                           </td>
-                         </tr>
-                       )}
-                     </tbody>
-                   </table>
-                 )}
-               </div>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Footer / Status Bar */}
-      <footer className="bg-slate-900 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] text-slate-500">
-        <div className="flex gap-4">
-          <span>Engine: SQL.js (WASM)</span>
-          <span className="flex items-center gap-1">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            Online
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <span>תומך ב: SELECT, JOIN, GROUP BY, ORDER BY, CTE</span>
-        </div>
-      </footer>
-
-      <style>{`
+    <style>
         ::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
+            width: 8px;
+            height: 8px;
         }
         ::-webkit-scrollbar-track {
-          background: transparent;
+            background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-          background: #334155;
-          border-radius: 10px;
+            background: #334155;
+            border-radius: 10px;
         }
         ::-webkit-scrollbar-thumb:hover {
-          background: #475569;
+            background: #475569;
         }
-      `}</style>
-    </div>
-  );
-}
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+        
+        // Fixed Icon wrapper using lucide.createIcons
+        const Icon = ({ name, className = "" }) => {
+          const iconRef = useRef(null);
+
+          useEffect(() => {
+            if (iconRef.current && window.lucide) {
+              // Map PascalCase to kebab-case for Lucide data attributes
+              const kebabName = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+              iconRef.current.innerHTML = `<i data-lucide="${kebabName}" class="${className}"></i>`;
+              window.lucide.createIcons();
+            }
+          }, [name, className]);
+
+          return React.createElement("span", { 
+            ref: iconRef,
+            className: "inline-flex items-center justify-center"
+          });
+        };
+
+        const Play = (p) => React.createElement(Icon, { ...p, name: "Play" });
+        const CheckCircle = (p) => React.createElement(Icon, { ...p, name: "CheckCircle" });
+        const Database = (p) => React.createElement(Icon, { ...p, name: "Database" });
+        const TableIcon = (p) => React.createElement(Icon, { ...p, name: "Table" });
+        const ChevronRight = (p) => React.createElement(Icon, { ...p, name: "ChevronRight" });
+        const ChevronLeft = (p) => React.createElement(Icon, { ...p, name: "ChevronLeft" });
+        const AlertCircle = (p) => React.createElement(Icon, { ...p, name: "AlertCircle" });
+        const BookOpen = (p) => React.createElement(Icon, { ...p, name: "BookOpen" });
+        const Award = (p) => React.createElement(Icon, { ...p, name: "Award" });
+        const RefreshCw = (p) => React.createElement(Icon, { ...p, name: "RefreshCw" });
+        const Layout = (p) => React.createElement(Icon, { ...p, name: "Layout" });
+        const Code = (p) => React.createElement(Icon, { ...p, name: "Code" });
+
+        // --- SQL.js Initialization ---
+        const SQL_JS_WASM = "https://sql.js.org/dist/sql-wasm.wasm";
+        const SQL_JS_JS = "https://sql.js.org/dist/sql-wasm.js";
+
+        // --- Database Schema & Seed Data ---
+        const SEED_SQL = `
+          CREATE TABLE departments (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL
+          );
+
+          CREATE TABLE employees (
+            id INTEGER PRIMARY KEY,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            email TEXT,
+            department_id INTEGER,
+            salary INTEGER,
+            hire_date DATE,
+            FOREIGN KEY (department_id) REFERENCES departments(id)
+          );
+
+          CREATE TABLE products (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            category TEXT,
+            price REAL,
+            stock_quantity INTEGER
+          );
+
+          CREATE TABLE orders (
+            id INTEGER PRIMARY KEY,
+            customer_name TEXT,
+            order_date DATE,
+            total_amount REAL
+          );
+
+          CREATE TABLE order_items (
+            id INTEGER PRIMARY KEY,
+            order_id INTEGER,
+            product_id INTEGER,
+            quantity INTEGER,
+            price_at_purchase REAL,
+            FOREIGN KEY (order_id) REFERENCES orders(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
+          );
+
+          -- Seed Data
+          INSERT INTO departments (id, name) VALUES (1, 'מכירות'), (2, 'פיתוח'), (3, 'שיווק'), (4, 'משאבי אנוש');
+          
+          INSERT INTO employees (first_name, last_name, email, department_id, salary, hire_date) VALUES 
+          ('ישראל', 'ישראלי', 'israel@company.com', 2, 25000, '2020-01-15'),
+          ('מיכל', 'כהן', 'michal@company.com', 1, 18000, '2021-03-10'),
+          ('דני', 'לוי', 'danny@company.com', 2, 22000, '2019-11-20'),
+          ('שירה', 'אברהם', 'shira@company.com', 3, 15500, '2022-05-04'),
+          ('יוסי', 'מזרחי', 'yossi@company.com', 1, 19000, '2018-07-22'),
+          ('ענת', 'פרץ', 'anat@company.com', 4, 14000, '2023-01-12');
+
+          INSERT INTO products (name, category, price, stock_quantity) VALUES
+          ('מחשב נייד', 'אלקטרוניקה', 4500.0, 15),
+          ('עכבר אלחוטי', 'אלקטרוניקה', 120.0, 50),
+          ('מקלדת מכנית', 'אלקטרוניקה', 350.0, 20),
+          ('שולחן כתיבה', 'ריהוט', 850.0, 10),
+          ('כיסא מנהלים', 'ריהוט', 1200.0, 5);
+
+          INSERT INTO orders (customer_name, order_date, total_amount) VALUES
+          ('אבי לוי', '2023-10-01', 4620.0),
+          ('רחל כהן', '2023-10-05', 350.0),
+          ('יעקב ישראלי', '2023-10-10', 1200.0);
+
+          INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) VALUES
+          (1, 1, 1, 4500.0),
+          (1, 2, 1, 120.0),
+          (2, 3, 1, 350.0),
+          (3, 5, 1, 1200.0);
+        `;
+
+        const EXERCISES = [
+          {
+            id: 1,
+            topic: 'SELECT, WHERE',
+            level: 'מתחיל',
+            title: 'הצגת כל העובדים',
+            description: 'כתוב שאילתה שתחזיר את כל העמודות מטבלת העובדים (employees).',
+            tables: ['employees'],
+            expectedQuery: 'SELECT * FROM employees',
+            hint: 'השתמש ב-SELECT * FROM...'
+          },
+          {
+            id: 2,
+            topic: 'SELECT, WHERE',
+            level: 'מתחיל',
+            title: 'סינון לפי שכר',
+            description: 'מצא את כל העובדים שהשכר שלהם גבוה מ-20,000.',
+            tables: ['employees'],
+            expectedQuery: 'SELECT * FROM employees WHERE salary > 20000',
+            hint: 'השתמש ב-WHERE salary > ...'
+          },
+          {
+            id: 3,
+            topic: 'JOIN',
+            level: 'בינוני',
+            title: 'עובדים ומחלקות',
+            description: 'הצג את השם הפרטי של העובד ואת שם המחלקה שלו. בצע JOIN בין employees ל-departments.',
+            tables: ['employees', 'departments'],
+            expectedQuery: 'SELECT e.first_name, d.name FROM employees e JOIN departments d ON e.department_id = d.id',
+            hint: 'זכור להשתמש ב-JOIN וב-ON לקישור המפתחות.'
+          },
+          {
+            id: 4,
+            topic: 'GROUP BY',
+            level: 'בינוני',
+            title: 'שכר ממוצע במחלקה',
+            description: 'חשב את השכר הממוצע לכל מחלקה. הצג את שם המחלקה ואת הממוצע.',
+            tables: ['employees', 'departments'],
+            expectedQuery: 'SELECT d.name, AVG(e.salary) FROM employees e JOIN departments d ON e.department_id = d.id GROUP BY d.name',
+            hint: 'השתמש ב-AVG וב-GROUP BY.'
+          },
+          {
+            id: 5,
+            topic: 'Advanced',
+            level: 'מתקדם',
+            title: 'מלאי מוצרים נמוך',
+            description: 'הצג את כל המוצרים שכמות המלאי שלהם נמוכה מ-15, מסודרים מהכמות הנמוכה לגבוהה.',
+            tables: ['products'],
+            expectedQuery: 'SELECT * FROM products WHERE stock_quantity < 15 ORDER BY stock_quantity ASC',
+            hint: 'השתמש ב-ORDER BY.'
+          }
+        ];
+
+        function App() {
+          const [db, setDb] = useState(null);
+          const [currentExercise, setCurrentExercise] = useState(EXERCISES[0]);
+          const [query, setQuery] = useState(EXERCISES[0].expectedQuery);
+          const [results, setResults] = useState(null);
+          const [error, setError] = useState(null);
+          const [success, setSuccess] = useState(false);
+          const [completedExercises, setCompletedExercises] = useState([]);
+          const [isInitializing, setIsInitializing] = useState(true);
+          const [showSchema, setShowSchema] = useState(false);
+
+          useEffect(() => {
+            const init = async () => {
+              try {
+                const script = document.createElement("script");
+                script.src = SQL_JS_JS;
+                script.async = true;
+                document.body.appendChild(script);
+
+                script.onload = async () => {
+                  const initSqlJs = window.initSqlJs;
+                  const SQL = await initSqlJs({ locateFile: () => SQL_JS_WASM });
+                  const database = new SQL.Database();
+                  database.run(SEED_SQL);
+                  setDb(database);
+                  setIsInitializing(false);
+                };
+              } catch (err) {
+                setError("שגיאה בטעינת מנוע ה-SQL");
+                setIsInitializing(false);
+              }
+
+              const saved = localStorage.getItem('sql_progress');
+              if (saved) setCompletedExercises(JSON.parse(saved));
+            };
+            init();
+          }, []);
+
+          useEffect(() => {
+            setQuery("");
+            setResults(null);
+            setError(null);
+            setSuccess(false);
+          }, [currentExercise]);
+
+          const validateQuery = (sql) => {
+            const forbidden = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE', 'GRANT', 'REVOKE'];
+            const upper = sql.toUpperCase();
+            for (let word of forbidden) {
+              if (upper.includes(word)) {
+                throw new Error(`שימוש בפקודה אסורה: ${word}. המערכת במצב קריאה בלבד.`);
+              }
+            }
+          };
+
+          const handleRun = () => {
+            if (!db) return;
+            setError(null);
+            setSuccess(false);
+
+            try {
+              validateQuery(query);
+              const res = db.exec(query);
+              if (res.length === 0) {
+                setResults({ columns: [], values: [] });
+              } else {
+                setResults({ columns: res[0].columns, values: res[0].values });
+              }
+            } catch (err) {
+              setError(err.message);
+              setResults(null);
+            }
+          };
+
+          const handleCheck = () => {
+            if (!db || !query) return;
+            try {
+              const userRes = db.exec(query);
+              const expectedRes = db.exec(currentExercise.expectedQuery);
+              const userJson = JSON.stringify(userRes);
+              const expectedJson = JSON.stringify(expectedRes);
+
+              if (userJson === expectedJson) {
+                setSuccess(true);
+                if (!completedExercises.includes(currentExercise.id)) {
+                  const newProgress = [...completedExercises, currentExercise.id];
+                  setCompletedExercises(newProgress);
+                  localStorage.setItem('sql_progress', JSON.stringify(newProgress));
+                }
+              } else {
+                setError("התוצאה אינה תואמת את הנדרש במשימה. נסה שוב.");
+              }
+            } catch (err) {
+              setError("שגיאה בבדיקת התשובה: " + err.message);
+            }
+          };
+
+          const resetProgress = () => {
+            setCompletedExercises([]);
+            localStorage.removeItem('sql_progress');
+          };
+
+          if (isInitializing) {
+            return (
+              <div className="flex items-center justify-center h-screen bg-slate-900 text-white font-sans text-xl" dir="rtl">
+                <RefreshCw className="animate-spin ml-3" />
+                טוען מסד נתונים...
+              </div>
+            );
+          }
+
+          return (
+            <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col" dir="rtl">
+              <header className="bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between shadow-lg sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="bg-blue-600 p-2 rounded-lg">
+                    <Database className="w-6 h-6 text-white" />
+                  </div>
+                  <h1 className="text-xl font-bold bg-gradient-to-l from-white to-slate-400 bg-clip-text text-transparent">
+                    SQL Master <span className="text-sm font-normal text-slate-400 hidden sm:inline">| תרגול שאילתות בזמן אמת</span>
+                  </h1>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="hidden md:flex flex-col items-end">
+                    <span className="text-xs text-slate-400">התקדמות</span>
+                    <div className="w-32 h-2 bg-slate-800 rounded-full mt-1 overflow-hidden">
+                      <div 
+                        className="h-full bg-green-500 transition-all duration-500" 
+                        style={{ width: `${(completedExercises.length / EXERCISES.length) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                  <button onClick={resetProgress} className="text-slate-400 hover:text-red-400 text-xs transition-colors">איפוס</button>
+                </div>
+              </header>
+
+              <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
+                <aside className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col overflow-y-auto">
+                  <div className="p-4 border-b border-slate-800 flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-blue-400" />
+                    <h2 className="font-semibold">רשימת תרגילים</h2>
+                  </div>
+                  <nav className="p-2 space-y-1">
+                    {EXERCISES.map((ex) => (
+                      <button
+                        key={ex.id}
+                        onClick={() => setCurrentExercise(ex)}
+                        className={`w-full text-right p-3 rounded-lg flex items-center justify-between transition-all ${
+                          currentExercise.id === ex.id 
+                            ? 'bg-blue-600/20 border border-blue-600/50 text-blue-100 shadow-inner' 
+                            : 'hover:bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">{ex.title}</span>
+                          <span className="text-[10px] opacity-70 uppercase tracking-wider">{ex.topic} • {ex.level}</span>
+                        </div>
+                        {completedExercises.includes(ex.id) && (
+                          <CheckCircle className="w-4 h-4 text-green-500 shrink-0 ml-2" />
+                        )}
+                      </button>
+                    ))}
+                  </nav>
+                </aside>
+
+                <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
+                  <div className="p-6 bg-slate-900/50 border-b border-slate-800">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[10px] px-2 py-0.5 rounded uppercase font-bold ${
+                            currentExercise.level === 'מתחיל' ? 'bg-green-500/20 text-green-400' :
+                            currentExercise.level === 'בינוני' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-red-500/20 text-red-400'
+                          }`}>
+                            {currentExercise.level}
+                          </span>
+                          <span className="text-xs text-slate-500">{currentExercise.topic}</span>
+                        </div>
+                        <h3 className="text-2xl font-bold text-white">{currentExercise.title}</h3>
+                      </div>
+                      <button 
+                        onClick={() => setShowSchema(!showSchema)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-sm transition-all"
+                      >
+                        <TableIcon className="w-4 h-4" />
+                        {showSchema ? 'הסתר סכימה' : 'צפה בסכימה'}
+                      </button>
+                    </div>
+                    <p className="text-slate-300 leading-relaxed max-w-3xl">{currentExercise.description}</p>
+                  </div>
+
+                  {showSchema && (
+                    <div className="bg-slate-900 border-b border-slate-800 p-4 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
+                           <TableIcon className="w-4 h-4" /> <span>employees</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 space-y-1">
+                          <div>id (PK)</div><div>first_name, last_name</div><div>email, salary</div><div>department_id (FK)</div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
+                           <TableIcon className="w-4 h-4" /> <span>departments</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 space-y-1">
+                          <div>id (PK)</div><div>name</div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
+                           <TableIcon className="w-4 h-4" /> <span>products</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 space-y-1">
+                          <div>id (PK)</div><div>name, category, price</div><div>stock_quantity</div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
+                           <TableIcon className="w-4 h-4" /> <span>orders</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 space-y-1">
+                          <div>id (PK)</div><div>customer_name, order_date</div><div>total_amount</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+                    <div className="flex-1 flex flex-col min-h-[200px] border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-2xl">
+                      <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Code className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-mono uppercase text-slate-400">SQL Editor</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={handleRun} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all transform active:scale-95 shadow-lg shadow-blue-900/20">
+                            <Play className="w-4 h-4 fill-current" /> הרץ
+                          </button>
+                          <button onClick={handleCheck} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all transform active:scale-95 shadow-lg shadow-green-900/20">
+                            <CheckCircle className="w-4 h-4" /> בדוק תשובה
+                          </button>
+                        </div>
+                      </div>
+                      <textarea
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        placeholder="כתוב את השאילתה שלך כאן..."
+                        className="flex-1 w-full bg-slate-900 p-6 font-mono text-lg text-blue-100 outline-none resize-none placeholder-slate-600"
+                        spellCheck="false"
+                      />
+                    </div>
+
+                    <div className="flex-1 flex flex-col border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-xl">
+                       <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center gap-2">
+                         <Layout className="w-4 h-4 text-slate-400" />
+                         <span className="text-xs font-mono uppercase text-slate-400">Results</span>
+                       </div>
+                       
+                       <div className="flex-1 overflow-auto p-0 scrollbar-thin scrollbar-thumb-slate-700">
+                         {error && (
+                           <div className="m-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3 text-red-400 animate-in slide-in-from-right-2">
+                             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                             <p className="text-sm">{error}</p>
+                           </div>
+                         )}
+
+                         {success && (
+                           <div className="m-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-start gap-3 text-green-400 animate-in zoom-in-95">
+                             <Award className="w-6 h-6 shrink-0" />
+                             <div>
+                               <h4 className="font-bold">כל הכבוד!</h4>
+                               <p className="text-sm">התשובה נכונה. עברת לשלב הבא.</p>
+                             </div>
+                           </div>
+                         )}
+
+                         {!results && !error && !success && (
+                           <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2 opacity-50">
+                             <Play className="w-12 h-12" />
+                             <p>הרץ שאילתה כדי לראות תוצאות</p>
+                           </div>
+                         )}
+
+                         {results && (
+                           <table className="w-full text-right text-sm border-collapse">
+                             <thead className="sticky top-0 bg-slate-800 z-10 shadow-sm">
+                               <tr>
+                                 {results.columns.map((col, i) => (
+                                   <th key={i} className="px-4 py-3 border-b border-slate-700 text-slate-300 font-bold whitespace-nowrap">{col}</th>
+                                 ))}
+                               </tr>
+                             </thead>
+                             <tbody className="divide-y divide-slate-800">
+                               {results.values.length > 0 ? (
+                                 results.values.map((row, i) => (
+                                   <tr key={i} className="hover:bg-slate-800/50 transition-colors">
+                                     {row.map((cell, j) => (
+                                       <td key={j} className="px-4 py-3 text-slate-400 whitespace-nowrap border-b border-slate-800/50">
+                                         {cell === null ? <span className="text-slate-700 italic">NULL</span> : String(cell)}
+                                       </td>
+                                     ))}
+                                   </tr>
+                                 ))
+                               ) : (
+                                 <tr>
+                                   <td colSpan={results.columns.length} className="px-4 py-8 text-center text-slate-500">אין תוצאות להצגה</td>
+                                 </tr>
+                               )}
+                             </tbody>
+                           </table>
+                         )}
+                       </div>
+                    </div>
+                  </div>
+                </div>
+              </main>
+
+              <footer className="bg-slate-900 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] text-slate-500">
+                <div className="flex gap-4">
+                  <span>Engine: SQL.js (WASM)</span>
+                  <span className="flex items-center gap-1">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Online
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <span>תומך ב: SELECT, JOIN, GROUP BY, ORDER BY, CTE</span>
+                </div>
+              </footer>
+            </div>
+          );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
