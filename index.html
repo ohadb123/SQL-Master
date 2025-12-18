@@ -27,10 +27,14 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #475569;
         }
-        body {
+        body, html {
             margin: 0;
             padding: 0;
+            height: 100%;
             overflow: hidden;
+        }
+        #root {
+            height: 100%;
         }
     </style>
 </head>
@@ -46,7 +50,6 @@
 
           useEffect(() => {
             if (iconRef.current && window.lucide) {
-              // Map PascalCase to kebab-case for Lucide data attributes
               const kebabName = name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
               iconRef.current.innerHTML = `<i data-lucide="${kebabName}" class="${className}"></i>`;
               window.lucide.createIcons();
@@ -72,11 +75,9 @@
         const Layout = (p) => React.createElement(Icon, { ...p, name: "Layout" });
         const Code = (p) => React.createElement(Icon, { ...p, name: "Code" });
 
-        // --- SQL.js Initialization ---
         const SQL_JS_WASM = "https://sql.js.org/dist/sql-wasm.wasm";
         const SQL_JS_JS = "https://sql.js.org/dist/sql-wasm.js";
 
-        // --- Database Schema & Seed Data ---
         const SEED_SQL = `
           CREATE TABLE departments (
             id INTEGER PRIMARY KEY,
@@ -119,7 +120,6 @@
             FOREIGN KEY (product_id) REFERENCES products(id)
           );
 
-          -- Seed Data
           INSERT INTO departments (id, name) VALUES (1, 'מכירות'), (2, 'פיתוח'), (3, 'שיווק'), (4, 'משאבי אנוש');
           
           INSERT INTO employees (first_name, last_name, email, department_id, salary, hire_date) VALUES 
@@ -314,8 +314,8 @@
           }
 
           return (
-            <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col" dir="rtl">
-              <header className="bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between shadow-lg sticky top-0 z-10">
+            <div className="h-screen bg-slate-950 text-slate-100 font-sans flex flex-col overflow-hidden" dir="rtl">
+              <header className="bg-slate-900 border-b border-slate-800 p-4 flex items-center justify-between shadow-lg shrink-0 z-20">
                 <div className="flex items-center gap-3">
                   <div className="bg-blue-600 p-2 rounded-lg">
                     <Database className="w-6 h-6 text-white" />
@@ -338,13 +338,13 @@
                 </div>
               </header>
 
-              <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
-                <aside className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col overflow-y-auto">
+              <main className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+                <aside className="w-full md:w-80 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0">
                   <div className="p-4 border-b border-slate-800 flex items-center gap-2">
                     <BookOpen className="w-5 h-5 text-blue-400" />
                     <h2 className="font-semibold">רשימת תרגילים</h2>
                   </div>
-                  <nav className="p-2 space-y-1">
+                  <nav className="flex-1 overflow-y-auto p-2 space-y-1">
                     {EXERCISES.map((ex) => (
                       <button
                         key={ex.id}
@@ -367,8 +367,8 @@
                   </nav>
                 </aside>
 
-                <div className="flex-1 flex flex-col overflow-hidden bg-slate-950">
-                  <div className="p-6 bg-slate-900/50 border-b border-slate-800">
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-slate-950">
+                  <div className="p-6 bg-slate-900/50 border-b border-slate-800 shrink-0 max-h-[40%] overflow-y-auto">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -385,65 +385,45 @@
                       </div>
                       <button 
                         onClick={() => setShowSchema(!showSchema)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-sm transition-all"
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-sm transition-all shadow-sm"
                       >
                         <TableIcon className="w-4 h-4" />
                         {showSchema ? 'הסתר סכימה' : 'צפה בסכימה'}
                       </button>
                     </div>
-                    <p className="text-slate-300 leading-relaxed max-w-3xl">{currentExercise.description}</p>
+                    <p className="text-slate-300 leading-relaxed max-w-3xl text-sm md:text-base">{currentExercise.description}</p>
                   </div>
 
                   {showSchema && (
-                    <div className="bg-slate-900 border-b border-slate-800 p-4 grid grid-cols-2 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                           <TableIcon className="w-4 h-4" /> <span>employees</span>
+                    <div className="bg-slate-900 border-b border-slate-800 p-4 grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0 overflow-x-auto">
+                      <div className="min-w-[120px] space-y-1">
+                        <div className="flex items-center gap-2 text-blue-400 text-xs font-bold border-b border-slate-800 pb-1">
+                           <TableIcon className="w-3 h-3" /> <span>employees</span>
                         </div>
-                        <div className="text-[11px] text-slate-400 space-y-1">
-                          <div>id (PK)</div><div>first_name, last_name</div><div>email, salary</div><div>department_id (FK)</div>
-                        </div>
+                        <div className="text-[10px] text-slate-400">id, names, salary, dept_id</div>
                       </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                           <TableIcon className="w-4 h-4" /> <span>departments</span>
+                      <div className="min-w-[120px] space-y-1">
+                        <div className="flex items-center gap-2 text-blue-400 text-xs font-bold border-b border-slate-800 pb-1">
+                           <TableIcon className="w-3 h-3" /> <span>departments</span>
                         </div>
-                        <div className="text-[11px] text-slate-400 space-y-1">
-                          <div>id (PK)</div><div>name</div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                           <TableIcon className="w-4 h-4" /> <span>products</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 space-y-1">
-                          <div>id (PK)</div><div>name, category, price</div><div>stock_quantity</div>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-blue-400 text-sm font-bold border-b border-slate-800 pb-1">
-                           <TableIcon className="w-4 h-4" /> <span>orders</span>
-                        </div>
-                        <div className="text-[11px] text-slate-400 space-y-1">
-                          <div>id (PK)</div><div>customer_name, order_date</div><div>total_amount</div>
-                        </div>
+                        <div className="text-[10px] text-slate-400">id, name</div>
                       </div>
                     </div>
                   )}
 
-                  <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
-                    <div className="flex-1 flex flex-col min-h-[200px] border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-2xl">
-                      <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center justify-between">
+                  <div className="flex-1 flex flex-col p-4 gap-4 min-h-0 overflow-hidden">
+                    <div className="h-[250px] shrink-0 flex flex-col border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-xl">
+                      <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2">
                           <Code className="w-4 h-4 text-blue-400" />
                           <span className="text-xs font-mono uppercase text-slate-400">SQL Editor</span>
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={handleRun} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all transform active:scale-95 shadow-lg shadow-blue-900/20">
-                            <Play className="w-4 h-4 fill-current" /> הרץ
+                          <button onClick={handleRun} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-md">
+                            <Play className="w-3 h-3 fill-current" /> הרץ
                           </button>
-                          <button onClick={handleCheck} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all transform active:scale-95 shadow-lg shadow-green-900/20">
-                            <CheckCircle className="w-4 h-4" /> בדוק תשובה
+                          <button onClick={handleCheck} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-md">
+                            <CheckCircle className="w-3 h-3" /> בדוק
                           </button>
                         </div>
                       </div>
@@ -451,18 +431,18 @@
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="כתוב את השאילתה שלך כאן..."
-                        className="flex-1 w-full bg-slate-900 p-6 font-mono text-lg text-blue-100 outline-none resize-none placeholder-slate-600"
+                        className="flex-1 w-full bg-slate-900 p-4 font-mono text-base text-blue-100 outline-none resize-none placeholder-slate-600"
                         spellCheck="false"
                       />
                     </div>
 
-                    <div className="flex-1 flex flex-col border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-xl">
-                       <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center gap-2">
+                    <div className="flex-1 flex flex-col border border-slate-800 rounded-xl bg-slate-900 overflow-hidden shadow-2xl min-h-0">
+                       <div className="bg-slate-800 px-4 py-2 border-b border-slate-700 flex items-center gap-2 shrink-0">
                          <Layout className="w-4 h-4 text-slate-400" />
                          <span className="text-xs font-mono uppercase text-slate-400">Results</span>
                        </div>
                        
-                       <div className="flex-1 overflow-auto p-0 scrollbar-thin scrollbar-thumb-slate-700">
+                       <div className="flex-1 overflow-auto bg-slate-900 scrollbar-thin scrollbar-thumb-slate-700">
                          {error && (
                            <div className="m-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3 text-red-400 animate-in slide-in-from-right-2">
                              <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -481,39 +461,41 @@
                          )}
 
                          {!results && !error && !success && (
-                           <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2 opacity-50">
+                           <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-2 opacity-50 p-8">
                              <Play className="w-12 h-12" />
                              <p>הרץ שאילתה כדי לראות תוצאות</p>
                            </div>
                          )}
 
                          {results && (
-                           <table className="w-full text-right text-sm border-collapse">
-                             <thead className="sticky top-0 bg-slate-800 z-10 shadow-sm">
-                               <tr>
-                                 {results.columns.map((col, i) => (
-                                   <th key={i} className="px-4 py-3 border-b border-slate-700 text-slate-300 font-bold whitespace-nowrap">{col}</th>
-                                 ))}
-                               </tr>
-                             </thead>
-                             <tbody className="divide-y divide-slate-800">
-                               {results.values.length > 0 ? (
-                                 results.values.map((row, i) => (
-                                   <tr key={i} className="hover:bg-slate-800/50 transition-colors">
-                                     {row.map((cell, j) => (
-                                       <td key={j} className="px-4 py-3 text-slate-400 whitespace-nowrap border-b border-slate-800/50">
-                                         {cell === null ? <span className="text-slate-700 italic">NULL</span> : String(cell)}
-                                       </td>
-                                     ))}
-                                   </tr>
-                                 ))
-                               ) : (
+                           <div className="w-full">
+                             <table className="w-full text-right text-sm border-collapse">
+                               <thead className="sticky top-0 bg-slate-800 z-10 shadow-sm">
                                  <tr>
-                                   <td colSpan={results.columns.length} className="px-4 py-8 text-center text-slate-500">אין תוצאות להצגה</td>
+                                   {results.columns.map((col, i) => (
+                                     <th key={i} className="px-4 py-3 border-b border-slate-700 text-slate-300 font-bold whitespace-nowrap">{col}</th>
+                                   ))}
                                  </tr>
-                               )}
-                             </tbody>
-                           </table>
+                               </thead>
+                               <tbody className="divide-y divide-slate-800/50">
+                                 {results.values.length > 0 ? (
+                                   results.values.map((row, i) => (
+                                     <tr key={i} className="hover:bg-slate-800/40 transition-colors">
+                                       {row.map((cell, j) => (
+                                         <td key={j} className="px-4 py-3 text-slate-400 whitespace-nowrap border-b border-slate-800/30">
+                                           {cell === null ? <span className="text-slate-700 italic">NULL</span> : String(cell)}
+                                         </td>
+                                       ))}
+                                     </tr>
+                                   ))
+                                 ) : (
+                                   <tr>
+                                     <td colSpan={results.columns.length} className="px-4 py-12 text-center text-slate-500 italic">אין תוצאות להצגה</td>
+                                   </tr>
+                                 )}
+                               </tbody>
+                             </table>
+                           </div>
                          )}
                        </div>
                     </div>
@@ -521,16 +503,12 @@
                 </div>
               </main>
 
-              <footer className="bg-slate-900 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] text-slate-500">
+              <footer className="bg-slate-900 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
                 <div className="flex gap-4">
-                  <span>Engine: SQL.js (WASM)</span>
-                  <span className="flex items-center gap-1">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Online
-                  </span>
+                  <span>SQL.js Engine</span>
+                  <span className="flex items-center gap-1"><div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div> Online</span>
                 </div>
-                <div className="flex gap-2">
-                  <span>תומך ב: SELECT, JOIN, GROUP BY, ORDER BY, CTE</span>
-                </div>
+                <span>תומך ב-SELECT, JOIN, GROUP BY ו-CTE</span>
               </footer>
             </div>
           );
